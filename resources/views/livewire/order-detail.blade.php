@@ -22,6 +22,27 @@
             </div>
         </div>
 
+        <!-- Delivery Confirmation Notice (jika customer sudah konfirmasi sampai) -->
+        @if($order->confirmed_arrival && $order->status === 'shipped')
+        <div class="bg-green-50 border border-green-200 p-4 rounded-xl mb-6">
+            <div class="flex items-start gap-3">
+                <i class="bi bi-check-circle-fill text-green-500 mt-0.5"></i>
+                <div>
+                    <h3 class="font-medium text-green-800 mb-1">Konfirmasi Diterima</h3>
+                    <p class="text-sm text-green-700">Anda telah mengkonfirmasi bahwa barang sudah sampai.</p>
+                    @if($order->confirmed_arrival_at)
+                    <p class="text-xs text-green-600 mt-1">
+                        Dikonfirmasi pada: {{ \Carbon\Carbon::parse($order->confirmed_arrival_at)->format('d M Y H:i') }}
+                    </p>
+                    @endif
+                    <p class="text-xs text-green-600 mt-1">
+                        <i class="bi bi-clock me-1"></i>Menunggu penjual menyelesaikan pesanan.
+                    </p>
+                </div>
+            </div>
+        </div>
+        @endif
+
         <!-- Cancel Reason (jika pesanan dibatalkan) -->
         @if($order->status === 'cancelled' && $order->cancel_reason)
         <div class="bg-red-50 border border-red-200 p-4 rounded-xl mb-6">
@@ -270,6 +291,34 @@
                     Lakukan Pembayaran
                 </a>
             </div>
+        @elseif($order->status === 'shipped' && !$order->confirmed_arrival)
+            <!-- Konfirmasi Barang Sampai & Hubungi Penjual -->
+            <div class="flex gap-3">
+                {{-- <a href="https://wa.me/{{$store->whatsapp}}?text=Halo%20kak,%20Saya%20ingin%20tanya%20tentang%20pesanan%20saya%20dengan%0a%0a*no.%20pesanan%20:%20{{$order->order_number}}*"
+                   target="_blank"
+                   class="flex-1 bg-gray-500 text-white py-3 rounded-xl font-medium hover:bg-gray-600 transition-colors text-center">
+                    <i class="bi bi-whatsapp me-2"></i>Hubungi Penjual
+                </a> --}}
+                <button 
+                    wire:click="confirmArrival"
+                    wire:loading.attr="disabled"
+                    wire:loading.class="opacity-50"
+                    class="flex-1 bg-primary text-white py-3 rounded-xl font-medium hover:bg-primary transition-colors text-center disabled:opacity-50">
+                    <span wire:loading.remove wire:target="confirmArrival">
+                        <i class="bi bi-check-circle me-2"></i>Barang Sudah Sampai
+                    </span>
+                    <span wire:loading wire:target="confirmArrival">
+                        <i class="bi bi-arrow-repeat animate-spin me-2"></i>Mengkonfirmasi...
+                    </span>
+                </button>
+            </div>
+        @elseif($order->status === 'shipped' && $order->confirmed_arrival)
+            <!-- Sudah konfirmasi sampai, hanya bisa hubungi penjual -->
+            {{-- <a href="https://wa.me/{{$store->whatsapp}}?text=Halo%20kak,%20Saya%20ingin%20tanya%20tentang%20pesanan%20saya%20dengan%0a%0a*no.%20pesanan%20:%20{{$order->order_number}}*"
+               target="_blank"
+               class="block w-full bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 transition-colors text-center">
+                <i class="bi bi-whatsapp me-2"></i>Hubungi Penjual
+            </a> --}}
         @elseif($canCancel)
             <!-- Only Cancel Button (untuk status checking) -->
             <button 
@@ -344,7 +393,6 @@
     @endif
 </div>
 
-
 <script>
     function copyToClipboard(text, btn) {
         navigator.clipboard.writeText(text).then(() => {
@@ -360,22 +408,22 @@
         });
     }
 
-    // Listen untuk alert dari Livewire
-    document.addEventListener('livewire:init', function() {
-        Livewire.on('showAlert', function(data) {
-            const message = data[0]?.message || data.message;
-            const type = data[0]?.type || data.type;
+//     // Listen untuk alert dari Livewire
+//     document.addEventListener('livewire:init', function() {
+//         Livewire.on('showAlert', function(data) {
+//             const message = data[0]?.message || data.message;
+//             const type = data[0]?.type || data.type;
             
-            // Anda bisa gunakan library alert seperti SweetAlert2, atau toast notification
-            if (type === 'success') {
-                alert('✅ ' + message);
-            } else if (type === 'error') {
-                alert('❌ ' + message);
-            } else if (type === 'warning') {
-                alert('⚠️ ' + message);
-            } else {
-                alert(message);
-            }
-        });
-    });
-</script>
+//             // Anda bisa gunakan library alert seperti SweetAlert2, atau toast notification
+//             if (type === 'success') {
+//                 alert('✅ ' + message);
+//             } else if (type === 'error') {
+//                 alert('❌ ' + message);
+//             } else if (type === 'warning') {
+//                 alert('⚠️ ' + message);
+//             } else {
+//                 alert(message);
+//             }
+//         });
+//     });
+// </script>

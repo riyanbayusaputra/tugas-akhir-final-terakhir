@@ -152,11 +152,11 @@ class ShoppingCart extends Component
                 continue; // PENTING: continue setelah validasi berhasil
             }
 
-            // Untuk kategori nasi box, minimal 10
+            // Untuk kategori nasi box, minimal 30
             if (str_contains($categoryName, 'nasi box')) {
-                if ($cart->quantity < 10) {
+                if ($cart->quantity < 30) {
                     $this->dispatch('showAlert', [
-                        'message' => 'Untuk kategori nasi box, minimal 10 porsi',
+                        'message' => 'Untuk kategori nasi box, minimal 30 porsi',
                         'type' => 'error'
                     ]);
                     return;

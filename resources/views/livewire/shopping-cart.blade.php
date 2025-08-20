@@ -136,8 +136,8 @@
                 }
                 
               if (str_contains($categoryName, 'nasi box')) {
-                    // Minimal 10 porsi
-                    if ($cart->quantity < 10) {
+                    // Minimal 30 porsi
+                    if ($cart->quantity < 30) {
                         $canCheckout = false;
                         break;
                     }
@@ -170,11 +170,11 @@
                 if (str_contains($categoryName, 'prasmanan') && $cart->quantity < 50) {
                 $messages[] = 'Prasmanan min. 50 porsi';
                 }
-                if (str_contains($categoryName, 'nasi box') && $cart->quantity < 10) {
-                $messages[] = 'Nasi Box min. 10 porsi';
+                if (str_contains($categoryName, 'nasi box') && $cart->quantity < 30) {
+                $messages[] = 'Nasi Box min. 30 porsi';
                 }
                 if (str_contains($categoryName, 'snack') && $cart->quantity < 20) {
-                $messages[] = 'Snack min. 20 pcs';
+                $messages[] = 'Snack min. 20 porsi';
                 }
             }
             $messages = array_unique($messages);

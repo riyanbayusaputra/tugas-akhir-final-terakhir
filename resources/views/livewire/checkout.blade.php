@@ -193,10 +193,10 @@
               <i class="bi bi-geo-alt-fill"></i>
               Gunakan Lokasi Saya
             </button>
-            <button onclick="refreshMap()" class="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 flex items-center gap-1">
+            {{-- <button onclick="refreshMap()" class="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 flex items-center gap-1">
               <i class="bi bi-arrow-clockwise"></i>
               Refresh Peta
-            </button>
+            </button> --}}
           </div>
           <div class="relative">
             <div id="map" style="height: 300px;" class="rounded-lg"></div>
