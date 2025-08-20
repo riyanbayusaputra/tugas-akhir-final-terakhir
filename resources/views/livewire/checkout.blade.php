@@ -193,10 +193,10 @@
               <i class="bi bi-geo-alt-fill"></i>
               Gunakan Lokasi Saya
             </button>
-            {{-- <button onclick="refreshMap()" class="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 flex items-center gap-1">
+            <button onclick="refreshMap()" class="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 flex items-center gap-1">
               <i class="bi bi-arrow-clockwise"></i>
               Refresh Peta
-            </button> --}}
+            </button>
           </div>
           <div class="relative">
             <div id="map" style="height: 300px;" class="rounded-lg"></div>
@@ -348,7 +348,6 @@
     </button>
   </div>
 </div>
-
 <script>
     // Global variables untuk data lokasi yang persistent
     window.locationData = {
@@ -365,6 +364,7 @@
     let storeMarker;
     let isMapInitialized = false;
     let mapCheckInterval;
+    let isUpdatingLocation = false; // Prevent multiple simultaneous updates
     
     const defaultLat = -6.8693;
     const defaultLon = 109.1402;
@@ -652,7 +652,7 @@
         }
     }
 
-    // =============== PERBAIKAN UTAMA: ANTI MAP BLANK ===============
+    // =============== ENHANCED PIN MOVEMENT FIXES ===============
     
     // Check if map element is visible and ready
     function isMapElementReady() {
@@ -696,7 +696,7 @@
         }
     }
 
-    // Enhanced map initialization with retry mechanism
+    // Enhanced map initialization with better pin handling
     function initMap() {
         console.log('🗺️ Attempting to initialize map...');
         
@@ -735,7 +735,13 @@
                     center: [defaultLat, defaultLon],
                     zoom: 13,
                     zoomControl: true,
-                    preferCanvas: true // Better performance
+                    preferCanvas: true,
+                    // Ensure map responds to interaction properly
+                    tap: true,
+                    touchZoom: true,
+                    boxZoom: true,
+                    doubleClickZoom: true,
+                    dragging: true
                 });
 
                 // Add tile layer with error handling
@@ -751,7 +757,7 @@
                 
                 tileLayer.addTo(map);
                 
-                // Add store marker
+                // Add store marker first
                 storeMarker = L.marker([storeLocation.lat, storeLocation.lng], {
                     icon: L.divIcon({
                         html: `
@@ -783,7 +789,8 @@
                         iconAnchor: [15, 42],
                         className: 'custom-store-icon'
                     }),
-                    title: 'Lokasi Bintang Rasa Catering'
+                    title: 'Lokasi Bintang Rasa Catering',
+                    zIndexOffset: 100 // Ensure store marker is above delivery marker
                 }).addTo(map);
                 
                 storeMarker.bindPopup(`
@@ -793,7 +800,7 @@
                     </div>
                 `);
                 
-                // Add delivery marker
+                // Add delivery marker with enhanced drag handling
                 marker = L.marker([defaultLat, defaultLon], { 
                     draggable: true,
                     icon: L.icon({
@@ -802,7 +809,9 @@
                         iconAnchor: [13, 43],
                         popupAnchor: [0, -40]
                     }),
-                    title: 'Drag untuk memindahkan lokasi pengiriman'
+                    title: 'Drag untuk memindahkan lokasi pengiriman',
+                    zIndexOffset: 200, // Ensure delivery marker is above store marker
+                    riseOnHover: true
                 }).addTo(map);
                 
                 marker.bindPopup(`
@@ -815,30 +824,48 @@
                     </div>
                 `).openPopup();
 
-                // Map event listeners
+                // Enhanced map click event with better pin movement
                 map.on('click', function(e) {
-                    updateMarkerPosition(e.latlng.lat, e.latlng.lng);
+                    if (isUpdatingLocation) {
+                        console.log('⚠️ Location update in progress, ignoring click');
+                        return;
+                    }
+                    
+                    console.log('🖱️ Map clicked at:', e.latlng.lat, e.latlng.lng);
+                    moveMarkerToLocation(e.latlng.lat, e.latlng.lng);
                 });
                 
-                // Marker drag events
-                marker.on('dragstart', function() {
+                // Enhanced marker drag events
+                marker.on('dragstart', function(e) {
+                    console.log('🔄 Marker drag started');
                     marker.closePopup();
                     showLoadingState();
+                    isUpdatingLocation = true;
+                });
+                
+                marker.on('drag', function(e) {
+                    // Optional: Update coordinates display in real-time during drag
+                    const position = e.target.getLatLng();
+                    console.log('🔄 Marker dragging to:', position.lat, position.lng);
                 });
                 
                 marker.on('dragend', function(e) {
                     const position = e.target.getLatLng();
-                    updateMarkerPosition(position.lat, position.lng);
+                    console.log('✅ Marker drag ended at:', position.lat, position.lng);
+                    
+                    // Use the enhanced movement function
+                    setTimeout(() => {
+                        updateMarkerPosition(position.lat, position.lng);
+                    }, 100);
                 });
                 
-                // Map load event
+                // Map ready event
                 map.on('load', function() {
                     console.log('✅ Map loaded successfully');
                     isMapInitialized = true;
                     
                     // Restore saved location if exists
                     setTimeout(() => {
-                        // Restore saved location if exists - IMMEDIATE
                         if (window.locationData.latitude && window.locationData.longitude) {
                             console.log('🔄 Restoring location immediately after map load');
                             restoreLocationFromData();
@@ -846,12 +873,17 @@
                     }, 100);
                 });
 
-                // Ensure map size is calculated correctly
+                // Ensure proper map sizing
                 setTimeout(() => {
                     if (map) {
                         console.log('🔄 Final map size invalidation');
                         map.invalidateSize();
                         isMapInitialized = true;
+                        
+                        // Additional check for saved location
+                        if (window.locationData.latitude && window.locationData.longitude) {
+                            restoreLocationFromData();
+                        }
                     }
                 }, 500);
                 
@@ -871,17 +903,62 @@
         }
     }
 
-    // Enhanced restore location function
+    // NEW: Enhanced function to move marker to specific location
+    function moveMarkerToLocation(lat, lng) {
+        if (!marker || !map || !isMapInitialized) {
+            console.log('❌ Cannot move marker - map not ready');
+            return;
+        }
+
+        if (isUpdatingLocation) {
+            console.log('⚠️ Already updating location, skipping');
+            return;
+        }
+
+        console.log('📍 Moving marker to:', lat, lng);
+        
+        isUpdatingLocation = true;
+        
+        // Immediate visual feedback - move the marker first
+        marker.setLatLng([lat, lng]);
+        
+        // Center map on new location with smooth animation
+        map.setView([lat, lng], Math.max(map.getZoom(), 15), {
+            animate: true,
+            duration: 0.5
+        });
+        
+        // Show loading popup immediately
+        marker.setPopupContent(`
+            <div class="text-sm text-center">
+                <div class="animate-pulse text-blue-600">⏳ Menghitung...</div>
+                <div class="text-xs text-gray-600">
+                    Mendapatkan alamat dan<br>
+                    menghitung ongkos kirim...
+                </div>
+            </div>
+        `).openPopup();
+        
+        showLoadingState();
+        
+        // Process the location update
+        updateMarkerPosition(lat, lng);
+    }
+
+    // Enhanced restore location function with better pin positioning
     function restoreLocationFromData() {
         const data = window.locationData;
         if (data.latitude && data.longitude && marker && map && isMapInitialized) {
             console.log('🔄 Restoring saved location:', data.latitude, data.longitude);
             
-            // Set marker position
+            // Move marker to saved position with animation
             marker.setLatLng([data.latitude, data.longitude]);
             
-            // Move map view to saved location
-            map.setView([data.latitude, data.longitude], 15);
+            // Center map on saved location
+            map.setView([data.latitude, data.longitude], 15, {
+                animate: true,
+                duration: 0.8
+            });
             
             const isFree = data.shipping_cost === 0 && data.distance > 0;
             const shippingText = isFree ? 'GRATIS' : `Rp ${data.shipping_cost.toLocaleString('id-ID')}`;
@@ -899,19 +976,21 @@
             `).openPopup();
             
             updateLocationDisplay();
-            console.log('✅ Location restored successfully');
+            console.log('✅ Location restored successfully with pin movement');
         } else {
             console.log('❌ Cannot restore location - missing data or map not ready');
         }
     }
 
-    // Enhanced update marker position
+    // Enhanced update marker position with better error handling
     function updateMarkerPosition(lat, lng) {
         if (!marker || !map || !isMapInitialized) {
             console.log('❌ Map not ready for marker update');
+            isUpdatingLocation = false;
             return;
         }
         
+        // Ensure marker is at correct position
         marker.setLatLng([lat, lng]);
         showLoadingState();
         
@@ -970,6 +1049,7 @@
                 `).openPopup();
                 
                 saveLocationData(lat, lng, address, distance, shippingCost);
+                isUpdatingLocation = false;
             })
             .catch(error => {
                 console.log('Address fetch failed:', error);
@@ -991,10 +1071,11 @@
                 `).openPopup();
                 
                 saveLocationData(lat, lng, fallbackAddress, distance, shippingCost);
+                isUpdatingLocation = false;
             });
     }
 
-    // Enhanced get current location
+    // Enhanced get current location with better pin movement
     function getCurrentLocation() {
         if (!navigator.geolocation) {
             alert('Browser Anda tidak mendukung geolocation.');
@@ -1003,6 +1084,11 @@
         
         if (!map || !isMapInitialized) {
             alert('Peta belum siap. Silakan tunggu sebentar dan coba lagi.');
+            return;
+        }
+        
+        if (isUpdatingLocation) {
+            console.log('⚠️ Location update in progress, ignoring GPS request');
             return;
         }
         
@@ -1021,9 +1107,11 @@
             function(position) {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
+                console.log('📱 GPS location obtained:', lat, lng);
+                
                 if (map && marker && isMapInitialized) {
-                    map.setView([lat, lng], 16);
-                    updateMarkerPosition(lat, lng);
+                    // Use enhanced movement function
+                    moveMarkerToLocation(lat, lng);
                 }
             }, 
             function(error) {
@@ -1055,6 +1143,7 @@
                 
                 const loadingEl = document.getElementById('shipping-loading');
                 if (loadingEl) loadingEl.style.display = 'none';
+                isUpdatingLocation = false;
             },
             {
                 enableHighAccuracy: true,
@@ -1064,17 +1153,25 @@
         );
     }
 
-    // Enhanced refresh map
+    // Enhanced refresh map with better pin reset
     function refreshMap() {
         console.log('🔄 Refreshing map...');
+        
+        isUpdatingLocation = false; // Reset update flag
         
         if (map && isMapInitialized) {
             try {
                 map.invalidateSize();
                 setTimeout(() => {
                     if (map) {
-                        map.setView([defaultLat, defaultLon], 13);
+                        // Reset to default location with smooth animation
+                        map.setView([defaultLat, defaultLon], 13, {
+                            animate: true,
+                            duration: 0.8
+                        });
+                        
                         if (marker) {
+                            // Reset marker to default position
                             marker.setLatLng([defaultLat, defaultLon]);
                             marker.setPopupContent(`
                                 <div class="text-sm text-center">
@@ -1098,6 +1195,13 @@
                             subtotal: currentSubtotal
                         };
                         
+                        // Clear localStorage backup
+                        try {
+                            localStorage.removeItem('checkoutLocation');
+                        } catch (error) {
+                            console.log('Could not clear localStorage');
+                        }
+                        
                         const containerEl = document.getElementById('location-info-container');
                         if (containerEl) containerEl.style.display = 'none';
                         
@@ -1115,7 +1219,7 @@
         }
     }
 
-    // =============== ENHANCED EVENT LISTENERS ===============
+    // =============== MAP VISIBILITY AND HEALTH MONITORING ===============
 
     // Watch for Livewire component updates that might affect the map
     function watchForMapContainer() {
@@ -1165,6 +1269,125 @@
         
         console.log('👀 Mutation observer started');
     }
+
+    // Enhanced map health check with pin validation
+    function startMapHealthCheck() {
+        if (mapCheckInterval) {
+            clearInterval(mapCheckInterval);
+        }
+        
+        mapCheckInterval = setInterval(() => {
+            const mapElement = document.getElementById('map');
+            
+            // Check if map element exists and is visible but map is not initialized
+            if (mapElement && isMapElementReady() && !isMapInitialized) {
+                console.log('🚨 Map element found but not initialized, fixing...');
+                initMap();
+                return;
+            }
+            
+            // Check if map is initialized but container is empty or markers missing
+            if (map && isMapInitialized) {
+                try {
+                    const mapContainer = map.getContainer();
+                    const tiles = mapContainer.querySelectorAll('.leaflet-tile');
+                    const leafletMapPane = mapContainer.querySelector('.leaflet-map-pane');
+                    
+                    // Check if map pane exists but is empty
+                    if (!leafletMapPane || mapContainer.children.length === 0) {
+                        console.log('🚨 Map container empty, reinitializing...');
+                        destroyMap();
+                        setTimeout(() => initMap(), 500);
+                        return;
+                    }
+                    
+                    // Check if markers are missing
+                    if (!marker || !storeMarker) {
+                        console.log('🚨 Markers missing, reinitializing map...');
+                        destroyMap();
+                        setTimeout(() => initMap(), 500);
+                        return;
+                    }
+                    
+                    // Validate marker positions
+                    if (marker) {
+                        const markerPos = marker.getLatLng();
+                        if (!markerPos || isNaN(markerPos.lat) || isNaN(markerPos.lng)) {
+                            console.log('🚨 Invalid marker position, fixing...');
+                            marker.setLatLng([defaultLat, defaultLon]);
+                        }
+                    }
+                    
+                    // Check if tiles are missing (map appears blank)
+                    if (tiles.length === 0 && isMapInitialized) {
+                        console.log('🚨 Map initialized but no tiles loaded, forcing refresh...');
+                        try {
+                            // Force complete refresh
+                            map.invalidateSize();
+                            
+                            // Get current view
+                            const center = map.getCenter();
+                            const zoom = map.getZoom();
+                            
+                            // Force redraw
+                            setTimeout(() => {
+                                if (map) {
+                                    map.setView(center, zoom);
+                                    map.invalidateSize();
+                                }
+                            }, 100);
+                            
+                            // If still no tiles after 2 seconds, reinitialize
+                            setTimeout(() => {
+                                const newTiles = mapContainer.querySelectorAll('.leaflet-tile');
+                                if (newTiles.length === 0) {
+                                    console.log('🚨 Tiles still not loading, reinitializing map...');
+                                    destroyMap();
+                                    setTimeout(() => initMap(), 500);
+                                }
+                            }, 2000);
+                            
+                        } catch (error) {
+                            console.log('Error during forced refresh:', error);
+                            destroyMap();
+                            setTimeout(() => initMap(), 1000);
+                        }
+                    }
+                    
+                    // Check map size consistency
+                    const rect = mapElement.getBoundingClientRect();
+                    const mapSize = map.getSize();
+                    
+                    if (Math.abs(rect.width - mapSize.x) > 10 || Math.abs(rect.height - mapSize.y) > 10) {
+                        console.log('🚨 Map size mismatch detected, fixing...', {
+                            elementSize: { width: rect.width, height: rect.height },
+                            mapSize: mapSize
+                        });
+                        map.invalidateSize();
+                    }
+                    
+                } catch (error) {
+                    console.log('Error in health check:', error);
+                    // If we can't even check the map, it's probably broken
+                    destroyMap();
+                    setTimeout(() => initMap(), 1000);
+                }
+            }
+        }, 2000);
+        
+        console.log('❤️ Enhanced map health check with pin validation started');
+    }
+
+    // Stop health check when map is working properly
+    function stopMapHealthCheck() {
+        if (mapCheckInterval) {
+            clearInterval(mapCheckInterval);
+            mapCheckInterval = null;
+            console.log('⏹️ Map health check stopped');
+        }
+    }
+
+    // =============== EVENT LISTENERS AND INITIALIZATION ===============
 
     // Enhanced Livewire event listeners
     document.addEventListener('livewire:initialized', function () {
@@ -1247,108 +1470,6 @@
         }, 1000);
     });
 
-    // =============== ADDITIONAL FIXES FOR MAP BLANK ISSUES ===============
-
-    // Continuous map health check
-    function startMapHealthCheck() {
-        if (mapCheckInterval) {
-            clearInterval(mapCheckInterval);
-        }
-        
-        mapCheckInterval = setInterval(() => {
-            const mapElement = document.getElementById('map');
-            
-            // Check if map element exists and is visible but map is not initialized
-            if (mapElement && isMapElementReady() && !isMapInitialized) {
-                console.log('🚨 Map element found but not initialized, fixing...');
-                initMap();
-                return;
-            }
-            
-            // Check if map is initialized but container is empty or tiles missing
-            if (map && isMapInitialized) {
-                try {
-                    const mapContainer = map.getContainer();
-                    const tiles = mapContainer.querySelectorAll('.leaflet-tile');
-                    const leafletMapPane = mapContainer.querySelector('.leaflet-map-pane');
-                    
-                    // Check if map pane exists but is empty or improperly sized
-                    if (!leafletMapPane || mapContainer.children.length === 0) {
-                        console.log('🚨 Map container empty, reinitializing...');
-                        destroyMap();
-                        setTimeout(() => initMap(), 500);
-                        return;
-                    }
-                    
-                    // Check if tiles are missing (map appears blank)
-                    if (tiles.length === 0 && isMapInitialized) {
-                        console.log('🚨 Map initialized but no tiles loaded, forcing refresh...');
-                        try {
-                            // Force complete refresh
-                            map.invalidateSize();
-                            
-                            // Get current view
-                            const center = map.getCenter();
-                            const zoom = map.getZoom();
-                            
-                            // Force redraw
-                            setTimeout(() => {
-                                if (map) {
-                                    map.setView(center, zoom);
-                                    map.invalidateSize();
-                                }
-                            }, 100);
-                            
-                            // If still no tiles after 2 seconds, reinitialize
-                            setTimeout(() => {
-                                const newTiles = mapContainer.querySelectorAll('.leaflet-tile');
-                                if (newTiles.length === 0) {
-                                    console.log('🚨 Tiles still not loading, reinitializing map...');
-                                    destroyMap();
-                                    setTimeout(() => initMap(), 500);
-                                }
-                            }, 2000);
-                            
-                        } catch (error) {
-                            console.log('Error during forced refresh:', error);
-                            destroyMap();
-                            setTimeout(() => initMap(), 1000);
-                        }
-                    }
-                    
-                    // Check map size consistency
-                    const rect = mapElement.getBoundingClientRect();
-                    const mapSize = map.getSize();
-                    
-                    if (Math.abs(rect.width - mapSize.x) > 10 || Math.abs(rect.height - mapSize.y) > 10) {
-                        console.log('🚨 Map size mismatch detected, fixing...', {
-                            elementSize: { width: rect.width, height: rect.height },
-                            mapSize: mapSize
-                        });
-                        map.invalidateSize();
-                    }
-                    
-                } catch (error) {
-                    console.log('Error in health check:', error);
-                    // If we can't even check the map, it's probably broken
-                    destroyMap();
-                    setTimeout(() => initMap(), 1000);
-                }
-            }
-        }, 2000); // Check every 2 seconds instead of 3
-        
-        console.log('❤️ Enhanced map health check started');
-    }
-
-    // Stop health check when map is working properly
-    function stopMapHealthCheck() {
-        if (mapCheckInterval) {
-            clearInterval(mapCheckInterval);
-            mapCheckInterval = null;
-            console.log('⏹️ Map health check stopped');
-        }
-    }
-
     // Enhanced window load event
     window.addEventListener('load', function() {
         console.log('✅ Window fully loaded');
@@ -1362,12 +1483,16 @@
         }, 1500);
     });
 
-    // Listen for window resize to fix map
+    // Listen for window resize to fix map and pins
     window.addEventListener('resize', function() {
         if (map && isMapInitialized) {
             console.log('🔄 Window resized, invalidating map size');
             setTimeout(() => {
                 map.invalidateSize();
+                // Ensure markers are still properly positioned
+                if (marker && window.locationData.latitude && window.locationData.longitude) {
+                    marker.setLatLng([window.locationData.latitude, window.locationData.longitude]);
+                }
             }, 100);
         }
     });
@@ -1378,6 +1503,10 @@
             console.log('🔄 Window focused, refreshing map');
             setTimeout(() => {
                 map.invalidateSize();
+                // Restore pin position if needed
+                if (marker && window.locationData.latitude && window.locationData.longitude) {
+                    restoreLocationFromData();
+                }
             }, 200);
         }
     });
@@ -1390,123 +1519,9 @@
         }
     });
 
-    // =============== DEBUGGING AND UTILITY FUNCTIONS ===============
+    // =============== ENHANCED LIVEWIRE INTEGRATION ===============
 
-    // Enhanced debugging functions
-    window.debugLocation = function() {
-        console.log('🔍 Location data:', window.locationData);
-        console.log('🔍 Map initialized:', isMapInitialized);
-        console.log('🔍 Map object:', map);
-        console.log('🔍 Marker object:', marker);
-        console.log('🔍 Store coordinates:', storeLocation);
-        console.log('🔍 Map element ready:', isMapElementReady());
-        
-        if (map) {
-            console.log('🔍 Map center:', map.getCenter());
-            console.log('🔍 Map zoom:', map.getZoom());
-            console.log('🔍 Map size:', map.getSize());
-        }
-    };
-
-    window.forceInitMap = function() {
-        console.log('🔧 Force initializing map...');
-        destroyMap();
-        setTimeout(() => {
-            if (isMapElementReady()) {
-                initMap();
-            } else {
-                console.log('❌ Map element not ready for force init');
-            }
-        }, 500);
-    };
-
-    // Emergency map recovery function
-    window.emergencyMapFix = function() {
-        console.log('🚑 Emergency map fix initiated...');
-        
-        // Stop health check
-        stopMapHealthCheck();
-        
-        // Destroy everything
-        destroyMap();
-        
-        // Clear any existing intervals
-        if (mapCheckInterval) {
-            clearInterval(mapCheckInterval);
-        }
-        
-        // Wait and reinitialize everything
-        setTimeout(() => {
-            console.log('🔄 Emergency reinitializing...');
-            initializeSubtotal();
-            
-            if (isMapElementReady()) {
-                initMap();
-                startMapHealthCheck();
-            } else {
-                console.log('❌ Map element still not ready after emergency fix');
-                alert('Terjadi masalah dengan peta. Silakan refresh halaman.');
-            }
-        }, 1000);
-    };
-
-    // Auto-recovery mechanism
-    setTimeout(() => {
-        if (isMapElementReady() && !isMapInitialized) {
-            console.log('⚡ Auto-recovery: Map element ready but not initialized');
-            initMap();
-        }
-        startMapHealthCheck();
-    }, 3000);
-
-    // =============== LIVEWIRE INTEGRATION ENHANCEMENTS ===============
-
-    // Listen for Livewire navigation events
-    if (window.Livewire) {
-        // Livewire v3 events
-        document.addEventListener('livewire:navigating', function () {
-            console.log('🚀 Livewire navigating...');
-            stopMapHealthCheck();
-        });
-
-        document.addEventListener('livewire:navigated', function () {
-            console.log('✅ Livewire navigated');
-            setTimeout(() => {
-                initializeSubtotal();
-                if (isMapElementReady() && !isMapInitialized) {
-                    initMap();
-                }
-                startMapHealthCheck();
-            }, 500);
-        });
-        
-        // Listen for component updates
-        document.addEventListener('livewire:updated', function (event) {
-            console.log('🔄 Livewire component updated');
-            
-            // Small delay to ensure DOM is updated
-            setTimeout(() => {
-                if (isMapElementReady()) {
-                    if (!isMapInitialized) {
-                        console.log('🗺️ Initializing map after component update');
-                        initMap();
-                    } else if (map) {
-                        console.log('♻️ Refreshing map size after component update');
-                        map.invalidateSize();
-                        
-                        // Restore location if it was lost
-                        if (window.locationData.latitude && window.locationData.longitude) {
-                            restoreLocationFromData();
-                        }
-                    }
-                }
-            }, 100);
-        });
-    }
-
-    // =============== ADDITIONAL FIXES FOR LIVEWIRE-SPECIFIC ISSUES ===============
-
-    // Handle Livewire component replacement/morphing
+    // Handle Livewire component replacement/morphing with pin preservation
     function handleLivewireMapUpdate() {
         console.log('🔄 Handling Livewire map update...');
         
@@ -1518,6 +1533,12 @@
         if (map && isMapInitialized) {
             console.log('♻️ Map exists, performing safe refresh...');
             try {
+                // Save current state
+                const savedLocation = {
+                    lat: window.locationData.latitude,
+                    lng: window.locationData.longitude
+                };
+                
                 // Safe refresh sequence
                 const currentCenter = map.getCenter();
                 const currentZoom = map.getZoom();
@@ -1533,17 +1554,23 @@
                         map.invalidateSize();
                         map.setView(currentCenter, currentZoom);
                         
-                        // Restore markers if they're missing
+                        // Ensure markers are still properly positioned
                         if (!storeMarker || !marker) {
                             console.log('🚨 Markers missing after refresh, recreating...');
                             destroyMap();
                             setTimeout(() => initMap(), 300);
+                        } else {
+                            // Restore marker positions
+                            if (savedLocation.lat && savedLocation.lng) {
+                                console.log('📍 Restoring marker position after refresh');
+                                marker.setLatLng([savedLocation.lat, savedLocation.lng]);
+                            }
                         }
                         
-                        // Restore location if exists after refresh
+                        // Restore location data after refresh
                         setTimeout(() => {
-                            if (window.locationData.latitude && window.locationData.longitude) {
-                                console.log('🔄 Restoring location after safe refresh');
+                            if (savedLocation.lat && savedLocation.lng) {
+                                console.log('🔄 Restoring full location data after safe refresh');
                                 restoreLocationFromData();
                             }
                         }, 400);
@@ -1596,7 +1623,94 @@
         });
     }
 
-    // =============== FINAL SAFETY NETS ===============
+    // =============== DEBUGGING AND UTILITY FUNCTIONS ===============
+
+    // Enhanced debugging functions
+    window.debugLocation = function() {
+        console.log('🔍 Location data:', window.locationData);
+        console.log('🔍 Map initialized:', isMapInitialized);
+        console.log('🔍 Map object:', map);
+        console.log('🔍 Marker object:', marker);
+        console.log('🔍 Store marker object:', storeMarker);
+        console.log('🔍 Store coordinates:', storeLocation);
+        console.log('🔍 Map element ready:', isMapElementReady());
+        console.log('🔍 Update in progress:', isUpdatingLocation);
+        
+        if (map) {
+            console.log('🔍 Map center:', map.getCenter());
+            console.log('🔍 Map zoom:', map.getZoom());
+            console.log('🔍 Map size:', map.getSize());
+        }
+        
+        if (marker) {
+            console.log('🔍 Marker position:', marker.getLatLng());
+        }
+    };
+
+    window.forceInitMap = function() {
+        console.log('🔧 Force initializing map...');
+        destroyMap();
+        isUpdatingLocation = false;
+        setTimeout(() => {
+            if (isMapElementReady()) {
+                initMap();
+            } else {
+                console.log('❌ Map element not ready for force init');
+            }
+        }, 500);
+    };
+
+    // Enhanced emergency map recovery function
+    window.emergencyMapFix = function() {
+        console.log('🚑 Emergency map fix initiated...');
+        
+        // Stop health check
+        stopMapHealthCheck();
+        
+        // Reset all flags
+        isUpdatingLocation = false;
+        
+        // Destroy everything
+        destroyMap();
+        
+        // Clear any existing intervals
+        if (mapCheckInterval) {
+            clearInterval(mapCheckInterval);
+        }
+        
+        // Wait and reinitialize everything
+        setTimeout(() => {
+            console.log('🔄 Emergency reinitializing...');
+            initializeSubtotal();
+            
+            if (isMapElementReady()) {
+                initMap();
+                startMapHealthCheck();
+            } else {
+                console.log('❌ Map element still not ready after emergency fix');
+                alert('Terjadi masalah dengan peta. Silakan refresh halaman.');
+            }
+        }, 1000);
+    };
+
+    // Enhanced test pin movement function
+    window.testPinMovement = function(lat = -6.8650, lng = 109.1350) {
+        console.log('🧪 Testing pin movement to:', lat, lng);
+        if (map && marker && isMapInitialized) {
+            moveMarkerToLocation(lat, lng);
+        } else {
+            console.log('❌ Map not ready for testing');
+        }
+    };
+
+    // Auto-recovery mechanism with pin validation
+    setTimeout(() => {
+        if (isMapElementReady() && !isMapInitialized) {
+            console.log('⚡ Auto-recovery: Map element ready but not initialized');
+            initMap();
+        }
+        startMapHealthCheck();
+    }, 3000);
 
     // Periodic check for map element appearance
     function periodicMapCheck() {
@@ -1614,7 +1728,7 @@
     // Start periodic check
     periodicMapCheck();
 
-    // Intersection Observer as additional safety net
+    // Enhanced Intersection Observer for pin management
     if (typeof IntersectionObserver !== 'undefined') {
         const mapObserver = new IntersectionObserver(function(entries) {
             entries.forEach(function(entry) {
@@ -1625,6 +1739,10 @@
                             initMap();
                         } else if (map) {
                             map.invalidateSize();
+                            // Ensure pins are properly positioned
+                            if (marker && window.locationData.latitude && window.locationData.longitude) {
+                                marker.setLatLng([window.locationData.latitude, window.locationData.longitude]);
+                            }
                         }
                     }, 200);
                 }
@@ -1643,5 +1761,5 @@
         }, 1000);
     }
 
-    console.log('🚀 Enhanced maps script loaded successfully');
+    console.log('🚀 Enhanced maps script with improved pin movement loaded successfully');
 </script>
